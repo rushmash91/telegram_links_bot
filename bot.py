@@ -1,18 +1,10 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
 import logging
-import re
 import sqlite3
-from sensitive import tok
+from mail import send_mail
+from sensitive import tok, user_id, name, username
 
-
-def find(string):
-    # findall() has been used
-    # with valid conditions for urls in string
-    url = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+] | [! * \(\),] | (?: %[0-9a-fA-F][0-9a-fA-F]))+', string)[0]
-    return url
-
-
-#add token here
 TOKEN = tok
 
 
@@ -22,11 +14,17 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
+TO, SUBJECT, MESSAGE = range(3)
 
 # Define a few command handlers. These usually take the two arguments bot and
 # update. Error handlers also receive the raised TelegramError object in error.
+
+
 def start(bot, update):
     """Send a message when the command /start is issued."""
+    user = update.message.from_user
+    send = f"{user.username} started your bot. \n First name {user.first_name} \n ID:{user.id}"
+    bot.send_message(chat_id=user_id, text=send)
     update.message.reply_text('Hi!')
 
 
@@ -76,15 +74,64 @@ def view_events(bot, update):
         update.message.reply_text(links)
 
 
-def echo(bot, update):
-    """Echo the user message."""
-    reply = "Tu " + update.message.text + "!"
-    update.message.reply_text(reply)
+# def echo(bot, update):
+#     """Echo the user message."""
+#     update.message.reply_text("Hi!")
 
 
 def error(bot, update, error):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, error)
+
+
+def email(bot, update):
+    id = update.message.from_user.id
+    if id == user_id and update.message.from_user.first_name == name and update.message.from_user.username == username:
+        update.message.reply_text("Give me an email address",
+                                  reply_markup=ReplyKeyboardMarkup([['arushsharma91@gmail.com']],
+                                                                   one_time_keyboard=True))
+    return TO
+
+
+def to(bot, update, user_data):
+    user = update.message.from_user
+    key = f"{user.id} to"
+    value = update.message.text
+    user_data[key] = value
+    logger.info("email request by %s to %s", user.first_name, update.message.text)
+    update.message.reply_text("Now, the Subject for the email", reply_markup=ReplyKeyboardRemove())
+    return SUBJECT
+
+
+def subject(bot, update, user_data):
+    user = update.message.from_user
+    key = f"{user.id} subject"
+    value = update.message.text
+    user_data[key] = value
+    logger.info("email subject %s", update.message.text)
+    update.message.reply_text("Now, the Body for the email")
+    return MESSAGE
+
+
+def body(bot, update, user_data):
+    user = update.message.from_user
+
+    logger.info("email body %s", update.message.text)
+
+    email_to = user_data[f"{user.id} to"]
+    email_subject = user_data[f"{user.id} subject"]
+    send_mail(email_to, email_subject, update.message.text)
+
+    del user_data[f"{user.id} to"]
+    del user_data[f"{user.id} subject"]
+
+    update.message.reply_text(f"email sent!")
+    return ConversationHandler.END
+
+
+def cancel(bot, update):
+    update.message.reply_text('Canceled.')
+    return ConversationHandler.END
 
 
 def main():
@@ -99,7 +146,19 @@ def main():
     dp.add_handler(CommandHandler("view_events", view_events))
     dp.add_handler(CommandHandler("remove_event", remove_event))
 
-    dp.add_handler(MessageHandler(Filters.text, echo))
+    email_handler = ConversationHandler(
+        entry_points=[CommandHandler('email', email)],
+        states={
+            TO: [MessageHandler(Filters.text, to, pass_user_data=True)],
+            SUBJECT: [MessageHandler(Filters.text, subject, pass_user_data=True)],
+            MESSAGE: [MessageHandler(Filters.text, body, pass_user_data=True)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    dp.add_handler(email_handler)
+
+    # dp.add_handler(MessageHandler(Filters.text, echo))
     dp.add_error_handler(error)
     updater.start_polling()
     updater.idle()
