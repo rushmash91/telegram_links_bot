@@ -1,5 +1,5 @@
 ## **Telegram Links Bot** 
-### [TRY IT](http://t.me/eventattendbot)
+### [TRY IT](http://t.me/eventattendbot) (Should have Telegram app)
 
 #### Sending Emails via Chatbot - add your smtp application password and send emails via conversation.
 #### Adding, Removing and Storing Important links into a SQL database to be retrieved whenever needed.
